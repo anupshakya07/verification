@@ -18,7 +18,6 @@ def main():
     citation_hmln = CitationNetworkHMLN(dataset="cora", num_nodes=num_nodes, num_clusters=num_clusters,
                                         spec_distance_matrix=spec_distance_matrix)
 
-    return
 
 
 if __name__ == "__main__":
