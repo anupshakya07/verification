@@ -158,15 +158,14 @@ def load_file(filepath):
 
 
 def compute_distance_matrix(emb_vectors, num_nodes):
-    distance_matrix = []
+    distance_matrix_np = np.zeros(shape=(num_nodes, num_nodes))
 
     for i in range(num_nodes):
-        dist_row = []
-        for j in range(num_nodes):
-            dist = scipy.spatial.distance.cosine(emb_vectors[i].cpu().detach(), emb_vectors[j].cpu().detach())
-            dist_row.append(round(dist, 3))
-        distance_matrix.append(dist_row)
-    return distance_matrix
+        for j in range(i, num_nodes):
+            dist = scipy.spatial.distance.cosine(emb_vectors[i], emb_vectors[j])
+            distance_matrix_np[i, j] = round(dist, 3)
+            distance_matrix_np[j, i] = round(dist, 3)
+    return distance_matrix_np
 
 def generate_query(supernode_dict):
     query_list = []
