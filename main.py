@@ -16,11 +16,11 @@ def main():
     nuv_pred_filepath = f"embeddings/{dataset}/{nuv_model}_nuv_pred_prob.pkl"
 
     spec_embeddings = utils.load_file(spec_embedding_filepath)
-    spec_distance_matrix = utils.compute_distance_matrix(spec_embeddings, num_nodes)
+    spec_distance_matrix = utils.compute_distance_matrix(spec_embeddings.detach().cpu().numpy(), num_nodes)
     spec_pred_probabilities = utils.load_file(spec_pred_filepath)
 
     nuv_embeddings = utils.load_file(nuv_embedding_fielpath)
-    nuv_distance_matrix = utils.compute_distance_matrix(nuv_embeddings, num_nodes)
+    nuv_distance_matrix = utils.compute_distance_matrix(nuv_embeddings.detach().cpu().numpy(), num_nodes)
     nuv_pred_probabilities = utils.load_file(nuv_pred_filepath)
 
     citation_hmln = CitationNetworkHMLN(dataset="cora", num_nodes=num_nodes, num_clusters=num_clusters,
