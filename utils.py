@@ -118,8 +118,6 @@ def calculate_accuracy(class_vars, graph, num_nodes=500):
     for j in range(0, num_nodes):
         for i in range(7):
             if class_vars[j, i].X > 0:
-                #             print("Predicted = ", i, ", Actual = ", graph.ndata["label"][j].item(),
-                #                   " Result = ", i == graph.ndata["label"][j].item())
                 if i == graph.ndata["label"][j].item():
                     correct += 1
     print("Accuracy = ", (correct / num_nodes) * 100)
@@ -155,7 +153,7 @@ def initialize_weights(num_clusters, num_classes):
 
 
 def load_file(filepath):
-    file = pickle.load(filepath, "rb")
+    file = pickle.load(open(filepath, "rb"))
     return file
 
 
@@ -169,3 +167,16 @@ def compute_distance_matrix(emb_vectors, num_nodes):
             dist_row.append(round(dist, 3))
         distance_matrix.append(dist_row)
     return distance_matrix
+
+def generate_query(supernode_dict):
+    query_list = []
+    for cluster_id, cluster_edges in supernode_dict.items():
+        sampled_edge = random.sample(cluster_edges, 1)[0]
+        query_list.append(sampled_edge)
+
+    query_list_2 = []
+    for cluster_id, cluster_edges in supernode_dict.items():
+        sampled_edges = random.sample(cluster_edges, 2)
+        sampled_edges = [x for x in sampled_edges if x not in query_list]
+        query_list_2.append(sampled_edges[0])
+    return query_list, query_list_2

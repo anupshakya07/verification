@@ -1,13 +1,11 @@
 from gurobipy import *
 import gurobipy as gb
 from gurobipy import GRB
-import pickle
 import numpy as np
 import random
 import math
 import time
 from scipy.stats import norm
-from tqdm import tqdm
 
 import utils
 
@@ -28,13 +26,13 @@ class CitationNetworkHMLN(object):
                                                                       self.num_clusters, spec_distance_matrix)
         self.supernode_fol_dict, self.fol_node_to_cluster_idx = utils.cluster_fol(self.edges_tuple)
         self.N_fol, self.N_hfol = utils.cluster_edge_count(self.supernode_fol_dict, self.supernode_dict)
-        self.supernode_fol_weights, self.supernode_hybrid_weights = utils.initialize_weights(self.num_clusters, self.num_classes)
-
+        self.supernode_fol_weights, self.supernode_hybrid_weights = utils.initialize_weights(self.num_clusters,
+                                                                                             self.num_classes)
 
     def train(self, num_iters):
         time_1 = time.time()
         for it_num in range(num_iters):
-            formula_weights, hybrid_formula_weights, dist_soft_lt_inequality, dist_soft_gt_inequality = self.initialize_distances()
+            formula_weights, hybrid_formula_weights, dist_soft_lt_inequality, dist_soft_gt_inequality = self.initialize_distances(self.spec_distance_matrix)
             self.construct_optimization_model(formula_weights, hybrid_formula_weights)
             self.t_model.optimize()
 
@@ -50,13 +48,17 @@ class CitationNetworkHMLN(object):
                     j = edge[1]
                     for k in range(self.num_classes):
                         self.t_model.addConstr(
-                            self.class_vars[j, k] + self.auxiliary_lt_softineq_vars[i, j, k] - self.class_vars[i, k] <= 1)
+                            self.class_vars[j, k] + self.auxiliary_lt_softineq_vars[i, j, k] - self.class_vars[
+                                i, k] <= 1, name="query_1_hfol_%d"%j)
                         self.t_model.addConstr(
-                            self.class_vars[i, k] + self.auxiliary_lt_softineq_vars[i, j, k] - self.class_vars[j, k] <= 1)
+                            self.class_vars[i, k] + self.auxiliary_lt_softineq_vars[i, j, k] - self.class_vars[
+                                j, k] <= 1, name="query_2_hfol_%d"%j)
                         self.t_model.addConstr(
-                            self.class_vars[j, k] - self.auxiliary_lt_softineq_vars[i, j, k] + self.class_vars[i, k] <= 1)
+                            self.class_vars[j, k] - self.auxiliary_lt_softineq_vars[i, j, k] + self.class_vars[
+                                i, k] <= 1, name="query_3_hfol_%d"%j)
                         self.t_model.addConstr(
-                            self.class_vars[j, k] + self.auxiliary_lt_softineq_vars[i, j, k] + self.class_vars[i, k] >= 1)
+                            self.class_vars[j, k] + self.auxiliary_lt_softineq_vars[i, j, k] + self.class_vars[
+                                i, k] >= 1, name="query_4_hfol_%d"%j)
 
             ##### Adding Constraints for each link  for        N * [(Cx <-> Cy) <-> K]
             for idx, link in enumerate(self.edges_tuple):
@@ -64,25 +66,31 @@ class CitationNetworkHMLN(object):
                 node_2 = link[1]
 
                 for j in range(self.num_classes):
-                    self.t_model.addConstr(self.class_vars[node_2, j] + self.auxiliary_vars[j, idx] - self.class_vars[node_1, j] <= 1)
-                    self.t_model.addConstr(self.class_vars[node_1, j] + self.auxiliary_vars[j, idx] - self.class_vars[node_2, j] <= 1)
-                    self.t_model.addConstr(self.class_vars[node_2, j] - self.auxiliary_vars[j, idx] + self.class_vars[node_1, j] <= 1)
-                    self.t_model.addConstr(self.class_vars[node_2, j] + self.auxiliary_vars[j, idx] + self.class_vars[node_1, j] >= 1)
+                    self.t_model.addConstr(
+                        self.class_vars[node_2, j] + self.auxiliary_vars[j, idx] - self.class_vars[node_1, j] <= 1, name="query_1_fol_%d"%j)
+                    self.t_model.addConstr(
+                        self.class_vars[node_1, j] + self.auxiliary_vars[j, idx] - self.class_vars[node_2, j] <= 1, name="query_2_fol_%d"%j)
+                    self.t_model.addConstr(
+                        self.class_vars[node_2, j] - self.auxiliary_vars[j, idx] + self.class_vars[node_1, j] <= 1, name="query_3_fol_%d"%j)
+                    self.t_model.addConstr(
+                        self.class_vars[node_2, j] + self.auxiliary_vars[j, idx] + self.class_vars[node_1, j] >= 1, name="query_4_fol_%d"%j)
 
             for i in range(self.num_nodes):
                 self.t_model.addConstr(gb.quicksum(self.class_vars[i, j] for j in range(self.num_classes)) == 1,
-                                  name="node_class_%d" % i)
+                                       name="node_class_%d" % i)
 
             self.t_model.setObjective(
-                gb.quicksum([gb.quicksum([self.auxiliary_vars[i, j] * formula_weights[i][j] for i in range(self.num_classes)
-                             for j, edge in enumerate(self.edges_tuple)]),
-                             gb.quicksum([self.class_vars[i, j] * self.spec_pred_probabilities[i][j] for i in range(self.num_nodes)
-                             for j in range(self.num_classes)]),
-                             gb.quicksum([self.auxiliary_lt_softineq_vars[i, j, k] * hybrid_formula_weights[i][j][k] *
-                                         dist_soft_lt_inequality[i][j][k] for i in range(self.num_nodes) for j in
-                                         range(self.num_nodes) for k in range(self.num_classes)]),
-                             ]),
-                                 GRB.MAXIMIZE)
+                gb.quicksum(
+                    [gb.quicksum([self.auxiliary_vars[i, j] * formula_weights[i][j] for i in range(self.num_classes)
+                                  for j, edge in enumerate(self.edges_tuple)]),
+                     gb.quicksum(
+                         [self.class_vars[i, j] * self.spec_pred_probabilities[i][j] for i in range(self.num_nodes)
+                          for j in range(self.num_classes)]),
+                     gb.quicksum([self.auxiliary_lt_softineq_vars[i, j, k] * hybrid_formula_weights[i][j][k] *
+                                  dist_soft_lt_inequality[i][j][k] for i in range(self.num_nodes) for j in
+                                  range(self.num_nodes) for k in range(self.num_classes)]),
+                     ]),
+                GRB.MAXIMIZE)
             self.t_model.update()
             self.t_model.optimize()
 
@@ -120,6 +128,116 @@ class CitationNetworkHMLN(object):
         time_2 = time.time()
         print("Total time spent for training the specification HMLN == ", time_2 - time_1, " secs")
 
+    def verify_nuv(self, nuv_distance_matrix, nuv_pred_probabilities):
+        query_list_1, query_list_2 = utils.generate_query(self.supernode_dict)
+
+        formula_weights, hybrid_formula_weights, dist_soft_lt_inequality, dist_soft_gt_inequality = self.initialize_distances(
+            nuv_distance_matrix)
+        self.construct_optimization_model(formula_weights, hybrid_formula_weights)
+
+        self.t_model.remove(self.t_model.getConstrs())
+        self.t_model.remove(self.t_model.getGenConstrs())
+        self.t_model.update()
+
+        for cid, edge_list in self.supernode_dict.items():
+            for edge in edge_list:
+                i = edge[0]
+                j = edge[1]
+                for k in range(self.num_classes):
+                    self.t_model.addConstr(
+                        self.class_vars[j, k] + self.auxiliary_lt_softineq_vars[i, j, k] - self.class_vars[i, k] <= 1, name="query_1_hfol_%d"%j)
+                    self.t_model.addConstr(
+                        self.class_vars[i, k] + self.auxiliary_lt_softineq_vars[i, j, k] - self.class_vars[j, k] <= 1, name="query_2_hfol_%d"%j)
+                    self.t_model.addConstr(
+                        self.class_vars[j, k] - self.auxiliary_lt_softineq_vars[i, j, k] + self.class_vars[i, k] <= 1, name="query_3_hfol_%d"%j)
+                    self.t_model.addConstr(
+                        self.class_vars[j, k] + self.auxiliary_lt_softineq_vars[i, j, k] + self.class_vars[i, k] >= 1, name="query_4_hfol_%d"%j)
+
+            ##### Adding Constraints for each link  for        N * [(Cx <-> Cy) <-> K]
+        for idx, link in enumerate(self.edges_tuple):
+            node_1 = link[0]
+            node_2 = link[1]
+            #     t_model.addConstr(neighbor_vars[node_1, node_2] == 1)
+
+            for j in range(self.num_classes):
+                self.t_model.addConstr(
+                    self.class_vars[node_2, j] + self.auxiliary_vars[j, idx] - self.class_vars[node_1, j] <= 1, name="query_1_fol_%d"%j)
+                self.t_model.addConstr(
+                    self.class_vars[node_1, j] + self.auxiliary_vars[j, idx] - self.class_vars[node_2, j] <= 1, name="query_2_fol_%d"%j)
+                self.t_model.addConstr(
+                    self.class_vars[node_2, j] - self.auxiliary_vars[j, idx] + self.class_vars[node_1, j] <= 1, name="query_3_fol_%d"%j)
+                self.t_model.addConstr(
+                    self.class_vars[node_2, j] + self.auxiliary_vars[j, idx] + self.class_vars[node_1, j] >= 1, name="query_4_fol_%d"%j)
+
+        for i in range(self.num_nodes):
+            self.t_model.addConstr(gb.quicksum(self.class_vars[i, j] for j in range(self.num_classes)) == 1,
+                                   name="node_class_%d" % i)
+
+        for q1, q2 in zip(query_list_1, query_list_2):
+            self.estimate_query(q1, q2, nuv_distance_matrix, nuv_pred_probabilities, formula_weights,
+                                hybrid_formula_weights, dist_soft_lt_inequality)
+
+    def estimate_query(self, q1, q2, distance_matrix_np, pred_probabilities, formula_weights, hybrid_formula_weights,
+                       dist_soft_lt_inequality):
+        time_1 = time.time()
+        i_1 = q1[0]
+        j_1 = q1[1]
+
+        i_2 = q2[0]
+        j_2 = q2[1]
+
+        print("Dist 1 = ", distance_matrix_np[i_1, j_1], " Dist 2 = ", distance_matrix_np[i_2, j_2])
+
+        deg = utils.SOFTNESS * (distance_matrix_np[i_2, j_2] - distance_matrix_np[i_1, j_1])
+        dist_softineq = -(math.log(1 + math.exp(deg)))
+
+        temp = dist_soft_lt_inequality[i_2][j_2]
+        dist_soft_lt_inequality[i_2][j_2] = [dist_softineq] * 7
+
+        self.t_model.setObjective(gb.quicksum([
+            gb.quicksum([self.auxiliary_vars[i, j] * formula_weights[i][j] for i in range(self.num_classes) for j, edge in
+                 enumerate(self.edges_tuple)]),
+            gb.quicksum([self.class_vars[i, j] * pred_probabilities[i][j] for i in range(self.num_nodes) for j in
+                         range(self.num_classes)]),
+            gb.quicksum([self.auxiliary_lt_softineq_vars[i, j, k] * hybrid_formula_weights[i][j][k] *
+                         dist_soft_lt_inequality[i][j][
+                             k] for i in range(self.num_nodes) for j in range(self.num_nodes) for k in
+                         range(self.num_classes)])
+        ]), GRB.MAXIMIZE)
+
+        # C(x) == C(y) constraint
+        for k in range(self.num_classes):
+            self.t_model.addConstr(self.class_vars[i_2, k] == self.class_vars[j_2, k], name="query_constr_eq_%d" % k)
+        self.t_model.update()
+
+        self.t_model.optimize()
+        obj_val1 = self.t_model.objVal  # Query = True Obj Value
+        print("obj val 1 = ", obj_val1)
+
+        # Removing Equality Constraints
+        for k in range(self.num_classes):
+            self.t_model.remove(self.t_model.getConstrByName("query_constr_eq_%d" % k))
+        self.t_model.update()
+
+        # C(x) != C(y) constraint
+        for k in range(self.num_classes):
+            self.t_model.addConstr(self.class_vars[i_2, k] + self.class_vars[j_2, k] <= 1,
+                                   name="query_constr_neq_%d" % k)
+        self.t_model.update()
+
+        self.t_model.optimize()
+        obj_val2 = self.t_model.objVal  # Query = False Obj Value
+
+        print("obj val 2 = ", obj_val2)
+
+        # Removing Non-equality Constraints
+        for k in range(self.num_classes):
+            self.t_model.remove(self.t_model.getConstrByName("query_constr_neq_%d" % k))
+        self.t_model.update()
+
+        dist_soft_lt_inequality[i_2][j_2] = temp
+        time_2 = time.time()
+        print(f"Time for inference = {time_2 - time_1} secs.")
 
     def construct_optimization_model(self, formula_weights, hybrid_formula_weights):
         self.t_model.Params.LogToConsole = 0
@@ -136,7 +254,6 @@ class CitationNetworkHMLN(object):
                                                        name="distance_softineq_vars")
 
         ##### Adding Constraints for each pair of nodes for       Dist(x,y)<k * [(Cx <-> Cy) <-> K]
-
         added_edges = []
         for cid, edge_list in self.supernode_dict.items():
             for eid, edge in enumerate(edge_list):
@@ -256,20 +373,19 @@ class CitationNetworkHMLN(object):
 
         return obj_val1, obj_val2
 
-    def estimate_ground_truths(self, fol_node_to_cluster_idx, supernode_dict,
-                               node_to_cluster_idx):
+    def estimate_ground_truths(self):
         E_FOL = np.zeros(shape=(100, self.num_classes))
         for i, edge in enumerate(self.edges_tuple):
-            if str(edge) in fol_node_to_cluster_idx:
-                cid = fol_node_to_cluster_idx[str(edge)]
+            if str(edge) in self.fol_node_to_cluster_idx:
+                cid = self.fol_node_to_cluster_idx[str(edge)]
                 for k in range(self.num_classes):
                     E_FOL[cid, k] += self.auxiliary_vars[k, i].X
         print("E_FOL sum = ", E_FOL.sum())
 
         E_HFOL = np.zeros(shape=(self.num_clusters, self.num_classes))
-        for cid, edge_list in supernode_dict.items():
+        for cid, edge_list in self.supernode_dict.items():
             for edge in edge_list:
-                if str(edge) in node_to_cluster_idx:
+                if str(edge) in self.node_to_cluster_idx:
                     i = edge[0]
                     j = edge[1]
                     for k in range(self.num_classes):
@@ -277,7 +393,7 @@ class CitationNetworkHMLN(object):
         print("E_HFOL sum = ", E_HFOL.sum())
         return E_FOL, E_HFOL
 
-    def initialize_distances(self):
+    def initialize_distances(self, distance_matrix):
         formula_weights = []
         hybrid_formula_weights = []
         dist_soft_lt_inequality = []
@@ -303,7 +419,7 @@ class CitationNetworkHMLN(object):
                 temp_lt_third_dim = []
                 temp_gt_third_dim = []
 
-                distance = self.distance_matrix[i, j]  # embedding distance between nodes i and j
+                distance = distance_matrix[i, j]  # embedding distance between nodes i and j
 
                 degree_lt = utils.SOFTNESS * (distance - utils.THRESHOLD)
                 degree_gt = utils.SOFTNESS * (utils.THRESHOLD - distance)
